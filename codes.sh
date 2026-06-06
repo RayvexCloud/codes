@@ -183,14 +183,66 @@ echo "Database Name : $DB_NAME"
 echo "Database User : $DB_USER"
 }
 
+reinstall_paymenter() {
+if [[ ! -d /var/www/paymenter ]]; then
+    error "Paymenter installation not found."
+    return 1
+fi
+
+echo
+read -rp "This will reinstall Paymenter files and keep your database. Continue? [y/N]: " CONFIRM
+
+if [[ ! "$CONFIRM" =~ ^[Yy]$ ]]; then
+    warn "Operation cancelled."
+    return 0
+fi
+
+cp /var/www/paymenter/.env /tmp/paymenter.env.backup
+
+TMP_DIR=$(mktemp -d)
+
+curl -L https://github.com/paymenter/paymenter/releases/latest/download/paymenter.tar.gz -o "$TMP_DIR/paymenter.tar.gz"
+
+mkdir -p "$TMP_DIR/extracted"
+tar -xzf "$TMP_DIR/paymenter.tar.gz" -C "$TMP_DIR/extracted"
+
+rsync -a --delete \
+    --exclude=".env" \
+    --exclude="storage/logs/*" \
+    "$TMP_DIR/extracted/" \
+    /var/www/paymenter/
+
+cp /tmp/paymenter.env.backup /var/www/paymenter/.env
+
+chown -R www-data:www-data /var/www/paymenter
+
+chmod -R 775 /var/www/paymenter/storage || true
+chmod -R 775 /var/www/paymenter/bootstrap/cache || true
+
+cd /var/www/paymenter
+
+php artisan optimize:clear
+php artisan migrate --force
+
+systemctl restart php8.3-fpm
+systemctl restart nginx
+systemctl restart paymenter
+
+rm -rf "$TMP_DIR"
+
+echo -e "${GREEN}========================================${NC}"
+echo -e "${GREEN}Paymenter Reinstalled Successfully${NC}"
+echo -e "${GREEN}========================================${NC}"
+}
+
 install_blueprint() {
 read -rp "Pterodactyl Directory [/var/www/pterodactyl]: " PTERO_DIR
 PTERO_DIR=${PTERO_DIR:-/var/www/pterodactyl}
 
-if [[ ! -d "$PTERO_DIR" ]]; then
-    error "Directory does not exist: $PTERO_DIR"
-    exit 1
-fi
+[[ -d "$PTERO_DIR" ]] || {
+    error "Directory does not exist."
+    return 1
+}
 
 apt update
 apt install -y ca-certificates curl git gnupg unzip wget zip
@@ -217,7 +269,7 @@ unzip -o release.zip
 
 yarn install
 
-cat > "$PTERO_DIR/.blueprintrc" <<EOF
+cat > "$PTERO_DIR/.blueprintrc" <<'EOF'
 WEBUSER="www-data";
 OWNERSHIP="www-data:www-data";
 USERSHELL="/bin/bash";
@@ -226,46 +278,74 @@ EOF
 chmod +x "$PTERO_DIR/blueprint.sh"
 bash "$PTERO_DIR/blueprint.sh"
 
-clear
 echo -e "${GREEN}========================================${NC}"
-echo -e "${GREEN} Blueprint Installed Successfully${NC}"
+echo -e "${GREEN}Blueprint Installed Successfully${NC}"
 echo -e "${GREEN}========================================${NC}"
-echo
 echo "Directory: $PTERO_DIR"
 }
 
+paymenter_menu() {
+while true; do
+    banner
+    echo "1. Fresh Install"
+    echo "2. Reinstall / Repair Files"
+    echo "0. Back"
+    read -rp "Select option: " PAYMENTER_OPTION
+
+    case "$PAYMENTER_OPTION" in
+        1)
+            echo "1) Ubuntu 24.04"
+            echo "2) Debian 11/12"
+            echo "3) Debian 13"
+            read -rp "Select OS: " OS
+
+            prompt_inputs
+
+            case "$OS" in
+                1) install_ubuntu ;;
+                2) install_debian12 ;;
+                3) install_debian13 ;;
+                *) error "Invalid OS option."; exit 1 ;;
+            esac
+
+            install_paymenter
+            break
+            ;;
+        2)
+            reinstall_paymenter
+            read -rp "Press Enter to continue..."
+            ;;
+        0)
+            break
+            ;;
+        *)
+            error "Invalid option."
+            ;;
+    esac
+done
+}
+
+while true; do
 banner
-echo "1) Install Paymenter"
-echo "2) Install Blueprint"
-echo "0) Exit"
+echo "1. Paymenter"
+echo "2. Install Blueprint"
+echo "3. Exit"
+
 read -rp "Select option: " MAIN
 
 case "$MAIN" in
-1)
-echo "1) Ubuntu 24.04"
-echo "2) Debian 11/12"
-echo "3) Debian 13"
-read -rp "Select OS: " OS
-
-prompt_inputs
-
-case "$OS" in
-1) install_ubuntu ;;
-2) install_debian12 ;;
-3) install_debian13 ;;
-*) error "Invalid OS option."; exit 1 ;;
+    1)
+        paymenter_menu
+        ;;
+    2)
+        install_blueprint
+        read -rp "Press Enter to continue..."
+        ;;
+    3|0)
+        exit 0
+        ;;
+    *)
+        error "Invalid option."
+        ;;
 esac
-
-install_paymenter
-;;
-2)
-install_blueprint
-;;
-0)
-exit 0
-;;
-*)
-error "Invalid option."
-exit 1
-;;
-esac
+done
