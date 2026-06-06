@@ -20,8 +20,8 @@ banner() {
 clear
 cat << "EOF"
 ╔════════════════════════════════════╗
-║          RayvexCloud              ║
-║      Paymenter Installer          ║
+║          RayvexCloud               ║
+║      Paymenter Installer           ║
 ╚════════════════════════════════════╝
 EOF
 }
