@@ -183,8 +183,60 @@ echo "Database Name : $DB_NAME"
 echo "Database User : $DB_USER"
 }
 
+install_blueprint() {
+read -rp "Pterodactyl Directory [/var/www/pterodactyl]: " PTERO_DIR
+PTERO_DIR=${PTERO_DIR:-/var/www/pterodactyl}
+
+if [[ ! -d "$PTERO_DIR" ]]; then
+    error "Directory does not exist: $PTERO_DIR"
+    exit 1
+fi
+
+apt update
+apt install -y ca-certificates curl git gnupg unzip wget zip
+
+mkdir -p /etc/apt/keyrings
+
+curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | \
+gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg
+
+echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_22.x nodistro main" \
+> /etc/apt/sources.list.d/nodesource.list
+
+apt update
+apt install -y nodejs
+
+cd "$PTERO_DIR"
+
+npm i -g yarn
+
+wget "https://github.com/BlueprintFramework/framework/releases/latest/download/release.zip" \
+-O "$PTERO_DIR/release.zip"
+
+unzip -o release.zip
+
+yarn install
+
+cat > "$PTERO_DIR/.blueprintrc" <<EOF
+WEBUSER="www-data";
+OWNERSHIP="www-data:www-data";
+USERSHELL="/bin/bash";
+EOF
+
+chmod +x "$PTERO_DIR/blueprint.sh"
+bash "$PTERO_DIR/blueprint.sh"
+
+clear
+echo -e "${GREEN}========================================${NC}"
+echo -e "${GREEN} Blueprint Installed Successfully${NC}"
+echo -e "${GREEN}========================================${NC}"
+echo
+echo "Directory: $PTERO_DIR"
+}
+
 banner
 echo "1) Install Paymenter"
+echo "2) Install Blueprint"
 echo "0) Exit"
 read -rp "Select option: " MAIN
 
@@ -206,6 +258,14 @@ esac
 
 install_paymenter
 ;;
-0) exit 0 ;;
-*) error "Invalid option."; exit 1 ;;
+2)
+install_blueprint
+;;
+0)
+exit 0
+;;
+*)
+error "Invalid option."
+exit 1
+;;
 esac
